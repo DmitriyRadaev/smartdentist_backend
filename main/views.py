@@ -1,6 +1,9 @@
 # views.py
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, generics, permissions, response, decorators, status
+from rest_framework.generics import ListAPIView, CreateAPIView, UpdateAPIView
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
     exceptions as jwt_exceptions
 from django.contrib.auth import authenticate
@@ -10,12 +13,13 @@ from rest_framework import exceptions as rest_exceptions
 from django.contrib.auth import get_user_model
 
 from .models import (
-    WorkerProfile
+    WorkerProfile, Patient, MedicalCase
 )
 
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 from .seriailizers import AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, \
-    SuperAdminRegistrationSerializer, WorkerProfileSerializer, UserProfileSerializer
+    SuperAdminRegistrationSerializer, WorkerProfileSerializer, UserProfileSerializer, PatientSerializer, \
+    MedicalCaseSerializer
 
 Account = get_user_model()
 
@@ -204,3 +208,51 @@ class UserProfileView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+# ОСНОВНАЯ ЛОГИКА
+
+# Работа с пациентами
+class PatientListCreateAPIView(APIView):
+    def get(self, request):
+        patients = Patient.objects.all().order_by('-created_at')
+        serializer = PatientSerializer(patients, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = PatientSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Пациенты
+class PatientListAPIView(ListAPIView):
+    queryset = Patient.objects.all().order_by('-created_at')
+    serializer_class = PatientSerializer
+
+class PatientCreateAPIView(CreateAPIView):
+    serializer_class = PatientSerializer
+
+class PatientUpdateAPIView(UpdateAPIView):
+    queryset = Patient.objects.all()
+    serializer_class = PatientSerializer
+    lookup_field = 'pk'
+
+# Приемы
+class MedicalCaseListAPIView(ListAPIView):
+    queryset = MedicalCase.objects.all().order_by('-created_at')
+    serializer_class = MedicalCaseSerializer
+
+class MedicalCaseCreateAPIView(CreateAPIView):
+    serializer_class = MedicalCaseSerializer
+
+class MedicalCaseUpdateAPIView(UpdateAPIView):
+    queryset = MedicalCase.objects.all()
+    serializer_class = MedicalCaseSerializer
+    lookup_field = 'pk'
+
+class PatientHistoryAPIView(ListAPIView):
+    serializer_class = MedicalCaseSerializer
+    def get_queryset(self):
+        return MedicalCase.objects.filter(patient_id=self.kwargs['patient_id'])

@@ -1,7 +1,7 @@
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile
+    WorkerProfile, Patient, MedicalCase
 )
 
 # -------------------------------------------------------------------------
@@ -115,3 +115,37 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = ("name", "surname", "patronymic")
+
+
+class PatientSerializer(serializers.ModelSerializer):
+    fio = serializers.SerializerMethodField(read_only=True)
+    birth_date = serializers.DateField(
+        format="%d.%m.%Y",
+        input_formats=['%d.%m.%Y', 'iso-8601']
+    )
+
+    class Meta:
+        model = Patient
+        fields = ['id', 'fio', 'name', 'surname', 'patronymic', 'birth_date', 'gender']
+        extra_kwargs = {
+            'name': {'write_only': True},
+            'surname': {'write_only': True},
+            'patronymic': {'write_only': True},
+        }
+
+    def get_fio(self, obj):
+        return f"{obj.surname} {obj.name} {obj.patronymic}".strip()
+
+
+class MedicalCaseSerializer(serializers.ModelSerializer):
+    patient_fio = serializers.CharField(source='patient.__str__', read_only=True)
+
+    # Указываем формат вывода для даты и времени приема
+    created_at = serializers.DateTimeField(
+        format="%d.%m.%Y",
+        read_only=True
+    )
+
+    class Meta:
+        model = MedicalCase
+        fields = ['id', 'patient', 'patient_fio', 'user', 'diagnosis', 'created_at']

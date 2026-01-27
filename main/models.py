@@ -136,3 +136,27 @@ class WorkerProfile(models.Model):
 
     def __str__(self):
         return f"Profile for {self.user.email}"
+
+
+# ОСНОВНЫЕ ТАБЛИЦЫ
+
+class Patient(models.Model):
+    name = models.CharField(max_length=255, verbose_name="Имя")
+    surname = models.CharField(max_length=255, verbose_name="Фамилия")
+    patronymic = models.CharField(max_length=255, blank=True, null=False, verbose_name="Отчество")
+    birth_date = models.DateField(verbose_name="Дата рождения")
+    gender = models.IntegerField(choices=[(0, 'Мужской'), (1, 'Женский')], verbose_name="Пол")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.surname} {self.name} {self.patronymic}".strip()
+
+
+class MedicalCase(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="cases", verbose_name="Пациент")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, verbose_name="Врач")
+    diagnosis = models.TextField(blank=True, verbose_name="Диагноз/Описание")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата приема")
+
+    def __str__(self):
+        return f"Прием #{self.id} - {self.patient.surname} {self.patient.name} {self.patient.patronymic}".strip()
