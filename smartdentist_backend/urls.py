@@ -20,18 +20,20 @@ from django.urls import path, include, re_path
 from django.views.static import serve
 from django.conf import settings
 from main import views
-
+from main.views import UserProfileView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    #Авторизация
-    path("api/auth/login/", views.loginView, name="login"),
-    path("api/auth/logout/", views.logoutView, name="logout"),
-    path("api/auth/refresh_token/", views.CookieTokenRefreshView.as_view(), name="token_refresh"),
+    # Авторизация
+    path("api/login/", views.loginView, name="login"),
+    path("api/logout/", views.logoutView, name="logout"),
+    path("api/refresh_token/", views.CookieTokenRefreshView.as_view(), name="token_refresh"),
 
     # Регистрация
-    path("api/auth/register/worker/", views.WorkerRegisterView.as_view(), name="worker_register"),
-    path("api/auth/register/admin/", views.AdminRegisterView.as_view(), name="admin_register"),
+    path("api/register/worker/", views.WorkerRegisterView.as_view(), name="worker_register"),
+    path("api/register/admin/", views.AdminRegisterView.as_view(), name="admin_register"),
+    # Профиль
+    path('api/account/profile/', UserProfileView.as_view(), name='current-user-profile'), # GET: Получить данные текущего пользователя
 
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),

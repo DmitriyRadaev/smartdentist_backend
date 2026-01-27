@@ -109,3 +109,9 @@ class WorkerProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkerProfile
         fields = ("id", "user", "work", "position")
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Account
+        fields = ("name", "surname", "patronymic")

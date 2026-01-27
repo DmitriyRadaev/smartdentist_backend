@@ -15,7 +15,7 @@ from .models import (
 
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 from .seriailizers import AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, \
-    SuperAdminRegistrationSerializer, WorkerProfileSerializer
+    SuperAdminRegistrationSerializer, WorkerProfileSerializer, UserProfileSerializer
 
 Account = get_user_model()
 
@@ -72,34 +72,28 @@ def loginView(request):
 @decorators.api_view(["POST"])
 @decorators.permission_classes([permissions.AllowAny])
 def logoutView(request):
-    # 1. Блэклист refresh токена
     try:
         refresh_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'])
         if refresh_token:
             token = tokens.RefreshToken(refresh_token)
             token.blacklist()
     except Exception:
-        # Если токен уже невалиден или его нет, игнорируем
         pass
 
-    # 2. Формируем ответ
     res = response.Response({"detail": "Logged out successfully"}, status=status.HTTP_200_OK)
 
-    # 3. Удаляем Access Token
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 4. Удаляем Refresh Token
     res.delete_cookie(
         key=settings.SIMPLE_JWT['AUTH_COOKIE_REFRESH'],
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 5. Удаляем куку роли
     res.delete_cookie(
         key="user_role",
         path=settings.SIMPLE_JWT.get('AUTH_COOKIE_PATH', '/'),
@@ -112,7 +106,6 @@ def logoutView(request):
         samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
     )
 
-    # 6. Удаляем CSRF куки
     res.delete_cookie(
         key=settings.CSRF_COOKIE_NAME,
         path='/',
@@ -159,7 +152,7 @@ class CookieTokenRefreshView(jwt_views.TokenRefreshView):
                 value=response_obj.data['refresh'],
                 expires=settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'],
                 secure=settings.SIMPLE_JWT.get('AUTH_COOKIE_SECURE', False),
-                httponly=True, # Жестко True
+                httponly=True,
                 samesite=settings.SIMPLE_JWT.get('AUTH_COOKIE_SAMESITE', 'Lax')
             )
             del response_obj.data["refresh"]
@@ -204,3 +197,10 @@ class WorkerProfileViewSet(viewsets.ModelViewSet):
         if user.is_superuser or user.is_staff:
             return super().get_queryset()
         return WorkerProfile.objects.filter(user=user)
+
+class UserProfileView(generics.RetrieveAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
