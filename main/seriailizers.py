@@ -1,7 +1,7 @@
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
-    WorkerProfile, Patient, MedicalCase
+    WorkerProfile, Patient, MedicalCase, IndividualImplant, ImplantLibrary
 )
 
 # -------------------------------------------------------------------------
@@ -149,3 +149,29 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = MedicalCase
         fields = ['id', 'patient', 'patient_fio', 'user', 'diagnosis', 'created_at']
+
+
+
+class ImplantSerializer(serializers.ModelSerializer):
+    # Достаем данные из связанной библиотеки
+    visualization_image = serializers.ImageField(source='implant_variant.visualization_image', read_only=True)
+    density_graph = serializers.ImageField(source='implant_variant.density_graph', read_only=True)
+    diameter = serializers.FloatField(source='implant_variant.diameter', read_only=True)
+    length = serializers.FloatField(source='implant_variant.length', read_only=True)
+    thread_shape = serializers.CharField(source='implant_variant.thread_shape', read_only=True)
+    thread_pitch = serializers.FloatField(source='implant_variant.thread_pitch', read_only=True)
+    thread_depth = serializers.CharField(source='implant_variant.thread_depth', read_only=True)
+    bone_type = serializers.CharField(source='implant_variant.bone_type', read_only=True)
+    hu_density = serializers.IntegerField(source='implant_variant.hu_density', read_only=True)
+    chewing_load = serializers.FloatField(source='implant_variant.chewing_load', read_only=True)
+    limit_stress = serializers.FloatField(source='implant_variant.limit_stress', read_only=True)
+    surface_area = serializers.FloatField(source='implant_variant.surface_area', read_only=True)
+
+    class Meta:
+        model = IndividualImplant
+        fields = '__all__'
+
+class ImplantLibrarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ImplantLibrary
+        fields = '__all__'

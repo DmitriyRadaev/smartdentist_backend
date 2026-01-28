@@ -160,3 +160,60 @@ class MedicalCase(models.Model):
 
     def __str__(self):
         return f"Прием #{self.id} - {self.patient.surname} {self.patient.name} {self.patient.patronymic}".strip()
+
+
+class DICOMUpload(models.Model):
+    case = models.ForeignKey(MedicalCase, on_delete=models.CASCADE, related_name="dicom_uploads")
+    file = models.FileField(upload_to='dicom_archives/%d/%m/%Y/', verbose_name="Архив DICOM")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Загрузка DICOM"
+        verbose_name_plural = "Загрузки DICOM"
+
+
+class ImplantLibrary(models.Model):
+    name = models.CharField(max_length=100, verbose_name="Название варианта (заглушки)")
+
+    # Изображения
+    visualization_image = models.ImageField(upload_to='visualizations_images', verbose_name="3D Визуализация")
+    density_graph = models.ImageField(upload_to='density_graphics', verbose_name="График плотности")
+
+    # Технические параметры
+    diameter = models.FloatField(verbose_name="Диаметр (мм)")
+    length = models.FloatField(verbose_name="Длина (мм)")
+    thread_shape = models.CharField(max_length=50, verbose_name="Форма резьбы")
+    thread_pitch = models.FloatField(verbose_name="Шаг резьбы (мм)")
+    thread_depth = models.CharField(max_length=50, verbose_name="Глубина резьбы (мм)")
+    bone_type = models.CharField(max_length=50, verbose_name="Тип кости")
+    hu_density = models.IntegerField(verbose_name="Плотность HU")
+    chewing_load = models.FloatField(verbose_name="Жевательная нагрузка (кгс)")
+    limit_stress = models.FloatField(verbose_name="Предельное напряжение (кг/мм2)")
+    surface_area = models.FloatField(verbose_name="Площадь поверхности резьбы (мм2)")
+
+    class Meta:
+        verbose_name = "Вариант из библиотеки"
+        verbose_name_plural = "Библиотека имплантов"
+
+    def __str__(self):
+        return f"{self.name} (D:{self.diameter} L:{self.length})"
+
+
+class IndividualImplant(models.Model):
+    case = models.OneToOneField(MedicalCase, on_delete=models.CASCADE, related_name="implant")
+    implant_variant = models.ForeignKey(
+        ImplantLibrary,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name="Выбранный вариант из библиотеки"
+    )
+
+    is_calculated = models.BooleanField(default=False, verbose_name="Расчет выполнен")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Результат расчета"
+        verbose_name_plural = "Результаты расчетов"
+
+    def __str__(self):
+        return f"Расчет САПР для приема #{self.case_id}"

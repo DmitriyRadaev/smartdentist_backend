@@ -1,7 +1,13 @@
 # views.py
+import os
+import random
+import time
+import zipfile
+
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, generics, permissions, response, decorators, status
 from rest_framework.generics import ListAPIView, CreateAPIView, UpdateAPIView
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt import tokens, views as jwt_views, serializers as jwt_serializers, \
@@ -13,13 +19,13 @@ from rest_framework import exceptions as rest_exceptions
 from django.contrib.auth import get_user_model
 
 from .models import (
-    WorkerProfile, Patient, MedicalCase
+    WorkerProfile, Patient, MedicalCase, ImplantLibrary, IndividualImplant, DICOMUpload
 )
 
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 from .seriailizers import AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, \
     SuperAdminRegistrationSerializer, WorkerProfileSerializer, UserProfileSerializer, PatientSerializer, \
-    MedicalCaseSerializer
+    MedicalCaseSerializer, ImplantSerializer, ImplantLibrarySerializer
 
 Account = get_user_model()
 
@@ -256,3 +262,94 @@ class PatientHistoryAPIView(ListAPIView):
     serializer_class = MedicalCaseSerializer
     def get_queryset(self):
         return MedicalCase.objects.filter(patient_id=self.kwargs['patient_id'])
+
+class DicomUploadAndProcessView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, case_id):
+        file_obj = request.FILES.get('file')
+
+        if not file_obj:
+            return Response({"error": "Архив не найден (поле 'file')"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Проверка существования приема
+        try:
+            case = MedicalCase.objects.get(id=case_id)
+        except MedicalCase.DoesNotExist:
+            return Response({"error": "Прием не найден"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Сохраняем информацию о загрузке архива в БД
+        DICOMUpload.objects.create(case=case, file=file_obj)
+
+        # Подготовка папки для распаковки
+        folder_name = f"case_{case_id}"
+        extract_path = os.path.join(settings.MEDIA_ROOT, 'dicoms', folder_name)
+
+        if not os.path.exists(extract_path):
+            os.makedirs(extract_path, exist_ok=True)
+
+        # Распаковка архива
+        try:
+            with zipfile.ZipFile(file_obj, 'r') as zip_ref:
+                zip_ref.extractall(extract_path)
+        except zipfile.BadZipFile:
+            return Response({"error": "Файл не является валидным ZIP-архивом"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Сбор путей ко всем файлам (для клиента)
+        file_urls = []
+        for root, dirs, files in os.walk(extract_path):
+            for file in files:
+                # Пропускаем скрытые файлы систем (типа __MACOSX)
+                if not file.startswith('.'):
+                    # Формируем URL относительно корня сайта
+                    relative_path = os.path.relpath(os.path.join(root, file), settings.MEDIA_ROOT)
+                    file_urls.append(settings.MEDIA_URL + relative_path)
+
+        # Эмуляция "работы нейросети" (задержка 2 секунды)
+        time.sleep(2.0)
+
+        # Выбор случайного шаблона из нашей библиотеки (10 вариантов)
+        library_variants = ImplantLibrary.objects.all()
+        if not library_variants.exists():
+            return Response({
+                "error": "Библиотека расчетов пуста. Загрузите варианты через админку."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        chosen_variant = random.choice(library_variants)
+
+        # Создаем или обновляем результат расчета для этого кейса
+        implant, created = IndividualImplant.objects.update_or_create(
+            case=case,
+            defaults={
+                "implant_variant": chosen_variant,
+                "is_calculated": True
+            }
+        )
+
+        # 8. Финальный ответ
+        return Response({
+            "status": "success",
+            "message": "Архив обработан. Нейросеть выполнила расчет.",
+            "dicom_files_count": len(file_urls),
+            "dicom_files": file_urls,
+            "calculation": ImplantSerializer(implant).data
+        }, status=status.HTTP_200_OK)
+
+
+class ImplantDetailsAPIView(APIView):
+
+    def get(self, request, case_id):
+        try:
+            implant = IndividualImplant.objects.get(case_id=case_id)
+            return Response(ImplantSerializer(implant).data)
+        except IndividualImplant.DoesNotExist:
+            return Response({"error": "Расчет для этого приема еще не выполнен"}, status=404)
+
+
+class LibraryListAPIView(ListAPIView):
+    queryset = ImplantLibrary.objects.all()
+    serializer_class = ImplantLibrarySerializer
+
+class LibraryCreateAPIView(CreateAPIView):
+    queryset = ImplantLibrary.objects.all()
+    serializer_class = ImplantLibrarySerializer

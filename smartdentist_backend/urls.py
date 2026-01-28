@@ -31,6 +31,12 @@ urlpatterns = [
     path('api/cases/update/<int:pk>/', MedicalCaseUpdateAPIView.as_view()),
 
 
+    path('api/cases/<int:case_id>/upload-dicom/', DicomUploadAndProcessView.as_view(), name='dicom-upload-process'),
+
+    path('api/implant/details/<int:case_id>/', ImplantDetailsAPIView.as_view(), name='implant-details'),
+    path('api/library/', LibraryListAPIView.as_view(), name='library-list'),
+    path('api/library/create/', LibraryCreateAPIView.as_view(), name='library-create'),
+
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
 ]
