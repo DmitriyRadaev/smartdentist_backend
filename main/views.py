@@ -25,7 +25,7 @@ from .models import (
 from .permissions import IsSuperAdmin, IsAdminOrSuperAdmin
 from .seriailizers import AccountSerializer, WorkerRegistrationSerializer, AdminRegistrationSerializer, \
     SuperAdminRegistrationSerializer, WorkerProfileSerializer, UserProfileSerializer, PatientSerializer, \
-    MedicalCaseSerializer, ImplantSerializer, ImplantLibrarySerializer
+    MedicalCaseSerializer, ImplantSerializer, ImplantLibrarySerializer, CaseDetailSerializer
 
 Account = get_user_model()
 
@@ -178,9 +178,7 @@ def current_user_view(request):
     return response.Response(serializer.data)
 
 
-# -------------------------------------------------------------------------
 # РЕГИСТРАЦИЯ И ПРОФИЛИ
-# -------------------------------------------------------------------------
 
 class WorkerRegisterView(generics.CreateAPIView):
     serializer_class = WorkerRegistrationSerializer
@@ -218,7 +216,6 @@ class UserProfileView(generics.RetrieveAPIView):
 
 # ОСНОВНАЯ ЛОГИКА
 
-# Работа с пациентами
 class PatientListCreateAPIView(APIView):
     def get(self, request):
         patients = Patient.objects.all().order_by('-created_at')
@@ -263,79 +260,6 @@ class PatientHistoryAPIView(ListAPIView):
     def get_queryset(self):
         return MedicalCase.objects.filter(patient_id=self.kwargs['patient_id'])
 
-class DicomUploadAndProcessView(APIView):
-    parser_classes = (MultiPartParser, FormParser)
-
-    def post(self, request, case_id):
-        file_obj = request.FILES.get('file')
-
-        if not file_obj:
-            return Response({"error": "Архив не найден (поле 'file')"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Проверка существования приема
-        try:
-            case = MedicalCase.objects.get(id=case_id)
-        except MedicalCase.DoesNotExist:
-            return Response({"error": "Прием не найден"}, status=status.HTTP_404_NOT_FOUND)
-
-        # Сохраняем информацию о загрузке архива в БД
-        DICOMUpload.objects.create(case=case, file=file_obj)
-
-        # Подготовка папки для распаковки
-        folder_name = f"case_{case_id}"
-        extract_path = os.path.join(settings.MEDIA_ROOT, 'dicoms', folder_name)
-
-        if not os.path.exists(extract_path):
-            os.makedirs(extract_path, exist_ok=True)
-
-        # Распаковка архива
-        try:
-            with zipfile.ZipFile(file_obj, 'r') as zip_ref:
-                zip_ref.extractall(extract_path)
-        except zipfile.BadZipFile:
-            return Response({"error": "Файл не является валидным ZIP-архивом"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Сбор путей ко всем файлам (для клиента)
-        file_urls = []
-        for root, dirs, files in os.walk(extract_path):
-            for file in files:
-                # Пропускаем скрытые файлы систем (типа __MACOSX)
-                if not file.startswith('.'):
-                    # Формируем URL относительно корня сайта
-                    relative_path = os.path.relpath(os.path.join(root, file), settings.MEDIA_ROOT)
-                    file_urls.append(settings.MEDIA_URL + relative_path)
-
-        # Эмуляция "работы нейросети" (задержка 2 секунды)
-        time.sleep(2.0)
-
-        # Выбор случайного шаблона из нашей библиотеки (10 вариантов)
-        library_variants = ImplantLibrary.objects.all()
-        if not library_variants.exists():
-            return Response({
-                "error": "Библиотека расчетов пуста. Загрузите варианты через админку."
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        chosen_variant = random.choice(library_variants)
-
-        # Создаем или обновляем результат расчета для этого кейса
-        implant, created = IndividualImplant.objects.update_or_create(
-            case=case,
-            defaults={
-                "implant_variant": chosen_variant,
-                "is_calculated": True
-            }
-        )
-
-        # 8. Финальный ответ
-        return Response({
-            "status": "success",
-            "message": "Архив обработан. Нейросеть выполнила расчет.",
-            "dicom_files_count": len(file_urls),
-            "dicom_files": file_urls,
-            "calculation": ImplantSerializer(implant).data
-        }, status=status.HTTP_200_OK)
-
-
 class ImplantDetailsAPIView(APIView):
 
     def get(self, request, case_id):
@@ -349,6 +273,60 @@ class ImplantDetailsAPIView(APIView):
 class LibraryListAPIView(ListAPIView):
     queryset = ImplantLibrary.objects.all()
     serializer_class = ImplantLibrarySerializer
+
+
+class MedicalCaseDetailAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, patient_id, case_id):
+        try:
+            case = MedicalCase.objects.select_related('patient', 'user').get(id=case_id, patient_id=patient_id)
+
+            serializer = CaseDetailSerializer(case, context={'request': request})
+            return Response(serializer.data)
+        except MedicalCase.DoesNotExist:
+            return Response({"error": "Прием не найден"}, status=404)
+
+class DicomUploadAndProcessView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, case_id):
+        file_obj = request.FILES.get('file')
+        if not file_obj:
+            return Response({"error": "Файл не получен"}, status=400)
+
+        variants = ImplantLibrary.objects.all()
+        if not variants.exists():
+            return Response({"error": "Библиотека пуста"}, status=500)
+
+        try:
+            case = MedicalCase.objects.get(id=case_id)
+        except MedicalCase.DoesNotExist:
+            return Response({"error": "Прием не найден"}, status=404)
+
+        folder_name = f"case_{case_id}"
+        extract_path = os.path.join(settings.MEDIA_ROOT, 'dicoms', folder_name)
+        os.makedirs(extract_path, exist_ok=True)
+
+        with zipfile.ZipFile(file_obj, 'r') as zip_ref:
+            zip_ref.extractall(extract_path)
+
+        time.sleep(2.0)
+
+        chosen_variant = random.choice(variants)
+
+        IndividualImplant.objects.update_or_create(
+            case=case,
+            defaults={"implant_variant": chosen_variant, "is_calculated": True}
+        )
+
+
+        case.refresh_from_db()
+
+        serializer = CaseDetailSerializer(case, context={'request': request})
+
+        return Response(serializer.data)
+
 
 class LibraryCreateAPIView(CreateAPIView):
     queryset = ImplantLibrary.objects.all()

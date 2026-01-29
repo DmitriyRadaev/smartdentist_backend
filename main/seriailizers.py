@@ -1,12 +1,13 @@
+import os
+
+from django.conf import settings
 from rest_framework import serializers, generics
 from django.contrib.auth import get_user_model
 from .models import (
     WorkerProfile, Patient, MedicalCase, IndividualImplant, ImplantLibrary
 )
 
-# -------------------------------------------------------------------------
 # АУТЕНТИФИКАЦИЯ И ПОЛЬЗОВАТЕЛИ
-# -------------------------------------------------------------------------
 Account = get_user_model()
 
 
@@ -153,25 +154,73 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
 
 
 class ImplantSerializer(serializers.ModelSerializer):
-    # Достаем данные из связанной библиотеки
-    visualization_image = serializers.ImageField(source='implant_variant.visualization_image', read_only=True)
-    density_graph = serializers.ImageField(source='implant_variant.density_graph', read_only=True)
-    diameter = serializers.FloatField(source='implant_variant.diameter', read_only=True)
-    length = serializers.FloatField(source='implant_variant.length', read_only=True)
-    thread_shape = serializers.CharField(source='implant_variant.thread_shape', read_only=True)
-    thread_pitch = serializers.FloatField(source='implant_variant.thread_pitch', read_only=True)
-    thread_depth = serializers.CharField(source='implant_variant.thread_depth', read_only=True)
-    bone_type = serializers.CharField(source='implant_variant.bone_type', read_only=True)
-    hu_density = serializers.IntegerField(source='implant_variant.hu_density', read_only=True)
-    chewing_load = serializers.FloatField(source='implant_variant.chewing_load', read_only=True)
-    limit_stress = serializers.FloatField(source='implant_variant.limit_stress', read_only=True)
-    surface_area = serializers.FloatField(source='implant_variant.surface_area', read_only=True)
+    visualization_image = serializers.SerializerMethodField()
+    density_graph = serializers.SerializerMethodField()
+    diameter = serializers.ReadOnlyField(source='implant_variant.diameter', default=None)
+    length = serializers.ReadOnlyField(source='implant_variant.length', default=None)
+    thread_shape = serializers.ReadOnlyField(source='implant_variant.thread_shape', default=None)
+    thread_pitch = serializers.ReadOnlyField(source='implant_variant.thread_pitch', default=None)
+    thread_depth = serializers.ReadOnlyField(source='implant_variant.thread_depth', default=None)
+    bone_type = serializers.ReadOnlyField(source='implant_variant.bone_type', default=None)
+    hu_density = serializers.ReadOnlyField(source='implant_variant.hu_density', default=None)
+    chewing_load = serializers.ReadOnlyField(source='implant_variant.chewing_load', default=None)
+    limit_stress = serializers.ReadOnlyField(source='implant_variant.limit_stress', default=None)
+    surface_area = serializers.ReadOnlyField(source='implant_variant.surface_area', default=None)
 
     class Meta:
         model = IndividualImplant
         fields = '__all__'
 
+    def get_visualization_image(self, obj):
+        if obj.implant_variant and obj.implant_variant.visualization_image:
+            return self.context['request'].build_absolute_uri(obj.implant_variant.visualization_image.url)
+        return None
+
+    def get_density_graph(self, obj):
+        if obj.implant_variant and obj.implant_variant.density_graph:
+            return self.context['request'].build_absolute_uri(obj.implant_variant.density_graph.url)
+        return None
+
+
 class ImplantLibrarySerializer(serializers.ModelSerializer):
     class Meta:
         model = ImplantLibrary
         fields = '__all__'
+
+class CaseDetailSerializer(serializers.ModelSerializer):
+    implant_data = serializers.SerializerMethodField()
+    dicom_files = serializers.SerializerMethodField()
+    patient_fio = serializers.CharField(source='patient.__str__', read_only=True)
+    created_at = serializers.DateTimeField(format="%d.%m.%Y %H:%M", read_only=True)
+
+    class Meta:
+        model = MedicalCase
+        fields = ['id', 'patient_fio', 'user', 'diagnosis', 'created_at', 'implant_data', 'dicom_files']
+
+    def get_implant_data(self, obj):
+        # Безопасно проверяем наличие OneToOne связи
+        try:
+            implant = getattr(obj, 'implant', None)
+            if implant:
+                return ImplantSerializer(implant, context=self.context).data
+        except Exception:
+            pass
+        return None
+
+    def get_dicom_files(self, obj):
+        # Проверка наличия request в контексте, чтобы не было 500 ошибки
+        request = self.context.get('request')
+        if not request:
+            return []
+
+        folder_path = os.path.join(settings.MEDIA_ROOT, 'dicoms', f'case_{obj.id}')
+        file_urls = []
+        if os.path.exists(folder_path):
+            for root, dirs, files in os.walk(folder_path):
+                for f in sorted(files):
+                    if not f.startswith('.'):
+                        rel_path = os.path.relpath(os.path.join(root, f), settings.MEDIA_ROOT)
+                        # Используем request для построения ссылки
+                        path = os.path.join(settings.MEDIA_URL, rel_path).replace('\\', '/')
+                        file_urls.append(request.build_absolute_uri(path))
+        return file_urls
