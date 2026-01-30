@@ -30,7 +30,7 @@ urlpatterns = [
     path('api/cases/create/', MedicalCaseCreateAPIView.as_view()),
     path('api/cases/update/<int:pk>/', MedicalCaseUpdateAPIView.as_view()),
     path('api/cases/<int:case_id>/upload-dicom/', DicomUploadAndProcessView.as_view(), name='dicom-upload-process'),
-    path('api/patients/<int:patient_id>/cases/<int:case_id>/', MedicalCaseDetailAPIView.as_view()),
+    # path('api/patients/<int:patient_id>/cases/<int:case_id>/', MedicalCaseDetailAPIView.as_view()),
 
 
     # Шаблоны для генерации

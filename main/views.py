@@ -243,9 +243,12 @@ class PatientUpdateAPIView(UpdateAPIView):
     lookup_field = 'pk'
 
 # Приемы
-class MedicalCaseListAPIView(ListAPIView):
-    queryset = MedicalCase.objects.all().order_by('-created_at')
+class MedicalCaseListAPIView(generics.ListAPIView):
+    queryset = MedicalCase.objects.select_related('patient', 'user').prefetch_related(
+        'implant__implant_variant').all().order_by('-created_at')
+
     serializer_class = MedicalCaseSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
 class MedicalCaseCreateAPIView(CreateAPIView):
     serializer_class = MedicalCaseSerializer
@@ -275,17 +278,17 @@ class LibraryListAPIView(ListAPIView):
     serializer_class = ImplantLibrarySerializer
 
 
-class MedicalCaseDetailAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request, patient_id, case_id):
-        try:
-            case = MedicalCase.objects.select_related('patient', 'user').get(id=case_id, patient_id=patient_id)
-
-            serializer = CaseDetailSerializer(case, context={'request': request})
-            return Response(serializer.data)
-        except MedicalCase.DoesNotExist:
-            return Response({"error": "Прием не найден"}, status=404)
+# class MedicalCaseDetailAPIView(APIView):
+#     permission_classes = [permissions.IsAuthenticated]
+#
+#     def get(self, request, patient_id, case_id):
+#         try:
+#             case = MedicalCase.objects.select_related('patient', 'user').get(id=case_id, patient_id=patient_id)
+#
+#             serializer = CaseDetailSerializer(case, context={'request': request})
+#             return Response(serializer.data)
+#         except MedicalCase.DoesNotExist:
+#             return Response({"error": "Прием не найден"}, status=404)
 
 class DicomUploadAndProcessView(APIView):
     parser_classes = (MultiPartParser, FormParser)

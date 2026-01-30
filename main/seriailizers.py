@@ -140,16 +140,49 @@ class PatientSerializer(serializers.ModelSerializer):
 
 class MedicalCaseSerializer(serializers.ModelSerializer):
     patient_fio = serializers.CharField(source='patient.__str__', read_only=True)
+    created_at = serializers.DateTimeField(format="%d.%m.%Y %H:%M", read_only=True)
 
-    # Указываем формат вывода для даты и времени приема
-    created_at = serializers.DateTimeField(
-        format="%d.%m.%Y",
-        read_only=True
-    )
+    implant_data = serializers.SerializerMethodField()
+
+    dicom_files = serializers.SerializerMethodField()
 
     class Meta:
         model = MedicalCase
-        fields = ['id', 'patient', 'patient_fio', 'user', 'diagnosis', 'created_at']
+        fields = [
+            'id', 'patient', 'patient_fio', 'user',
+            'diagnosis', 'created_at', 'implant_data', 'dicom_files'
+        ]
+
+    def get_implant_data(self, obj):
+        try:
+            # Пытаемся найти связанный расчет IndividualImplant
+            implant = getattr(obj, 'implant', None)
+            if implant and implant.is_calculated:
+                # Используем существующий ImplantSerializer
+                return ImplantSerializer(implant, context=self.context).data
+        except Exception:
+            pass
+        return None
+
+    def get_dicom_files(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return []
+
+        folder_path = os.path.join(settings.MEDIA_ROOT, 'dicoms', f'case_{obj.id}')
+        file_urls = []
+
+        if os.path.exists(folder_path):
+            # Рекурсивно обходим все папки внутри (os.walk)
+            for root, dirs, files in os.walk(folder_path):
+                # Сортируем файлы, чтобы слайдер шел по порядку
+                for f in sorted(files):
+                    if not f.startswith('.'):
+                        rel_path = os.path.relpath(os.path.join(root, f), settings.MEDIA_ROOT)
+                        # Формируем полный URL через request
+                        path = os.path.join(settings.MEDIA_URL, rel_path).replace('\\', '/')
+                        file_urls.append(request.build_absolute_uri(path))
+        return file_urls
 
 
 
